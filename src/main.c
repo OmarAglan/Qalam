@@ -5,7 +5,7 @@
  * Windows entry point for the Qalam IDE application.
  * Initializes subsystems, creates the main window, and runs the message loop.
  * 
- * @version 0.1.0-dev
+ * @version 0.0.1
  * @copyright (c) 2026 Qalam Project
  */
 

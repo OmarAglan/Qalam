@@ -5,7 +5,7 @@
  * Defines the terminal subsystem API for embedded terminal functionality
  * using Windows ConPTY with Arabic console support.
  * 
- * @version 0.1.0-dev
+ * @version 0.0.1
  * @copyright (c) 2026 Qalam Project
  */
 

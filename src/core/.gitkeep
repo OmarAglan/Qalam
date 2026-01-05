@@ -1,0 +1,6 @@
+# Qalam Core Subsystem
+
+This directory will contain:
+- buffer.c - Gap buffer implementation
+- cursor.c - Cursor management
+- undo.c - Undo/redo system

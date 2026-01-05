@@ -5,7 +5,7 @@
  * Qalam is an Arabic-first Integrated Development Environment designed
  * for native RTL text support using DirectWrite and ConPTY on Windows 10+.
  * 
- * @version 0.1.0-dev
+ * @version 0.0.1
  * @copyright (c) 2026 Qalam Project
  */
 
@@ -43,12 +43,12 @@ extern "C" {
  *============================================================================*/
 
 #ifndef QALAM_VERSION
-    #define QALAM_VERSION "0.1.0-dev"
+    #define QALAM_VERSION "0.0.1"
 #endif
 
 #define QALAM_VERSION_MAJOR 0
-#define QALAM_VERSION_MINOR 1
-#define QALAM_VERSION_PATCH 0
+#define QALAM_VERSION_MINOR 0
+#define QALAM_VERSION_PATCH 1
 
 /**
  * @brief Get the Qalam version string

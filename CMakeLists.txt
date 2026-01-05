@@ -6,7 +6,7 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(Qalam
-    VERSION 0.1.0
+    VERSION 0.0.1
     DESCRIPTION "Arabic-first Integrated Development Environment"
     LANGUAGES C
 )
@@ -38,7 +38,7 @@ if(WIN32)
     
     # Qalam version definition
     add_compile_definitions(
-        QALAM_VERSION="0.1.0-dev"
+        QALAM_VERSION="0.0.1"
     )
 endif()
 

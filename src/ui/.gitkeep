@@ -1,0 +1,7 @@
+# Qalam UI Subsystem
+
+This directory will contain:
+- window.c - Win32 window management
+- render.c - Direct2D/DirectWrite rendering
+- dwrite.c - DirectWrite text layout
+- input.c - Keyboard/mouse input handling

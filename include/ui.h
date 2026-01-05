@@ -5,7 +5,7 @@
  * Defines the window management and DirectWrite rendering APIs
  * for the Qalam IDE with full RTL layout support.
  * 
- * @version 0.1.0-dev
+ * @version 0.0.1
  * @copyright (c) 2026 Qalam Project
  */
 

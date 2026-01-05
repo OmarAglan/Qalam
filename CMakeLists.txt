@@ -70,8 +70,8 @@ include_directories(
 #-----------------------------------------------------------------------------
 set(QALAM_SOURCES
     src/main.c
-    # Core subsystem sources (to be added)
-    # src/core/buffer.c
+    # Core subsystem sources
+    src/core/buffer.c
     # src/core/cursor.c
     
     # UI subsystem sources (to be added)
@@ -83,6 +83,13 @@ set(QALAM_SOURCES
     
     # Terminal subsystem sources (to be added)
     # src/terminal/conpty.c
+)
+
+#-----------------------------------------------------------------------------
+# Core Library (for sharing between main executable and tests)
+#-----------------------------------------------------------------------------
+set(QALAM_CORE_SOURCES
+    src/core/buffer.c
 )
 
 #-----------------------------------------------------------------------------
@@ -129,12 +136,37 @@ install(TARGETS qalam
 )
 
 #-----------------------------------------------------------------------------
-# Testing Configuration (for future use)
+# Testing Configuration
 #-----------------------------------------------------------------------------
-# enable_testing()
-# add_subdirectory(tests)
+enable_testing()
+
+# Test executable for buffer tests
+add_executable(test_buffer
+    tests/test_buffer.c
+    ${QALAM_CORE_SOURCES}
+)
+
+target_include_directories(test_buffer PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+
+if(WIN32)
+    target_link_libraries(test_buffer PRIVATE
+        user32
+        kernel32
+    )
+endif()
+
+set_target_properties(test_buffer PROPERTIES
+    OUTPUT_NAME "test_buffer"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/tests"
+)
+
+# Register test with CTest
+add_test(NAME BufferTests COMMAND test_buffer)
 
 message(STATUS "Qalam IDE Configuration:")
 message(STATUS "  Version: ${PROJECT_VERSION}")
 message(STATUS "  C Standard: ${CMAKE_C_STANDARD}")
 message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
+message(STATUS "  Tests: Enabled")

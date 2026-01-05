@@ -1,0 +1,7 @@
+# Qalam Terminal Subsystem
+
+This directory will contain:
+- conpty.c - ConPTY pseudoconsole wrapper
+- process.c - Process spawning and management
+- io.c - Terminal I/O operations
+- buffer.c - Terminal output buffer

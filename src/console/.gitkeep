@@ -1,0 +1,7 @@
+
+Qalam Console Subsystem
+This directory will contain:
+
+arabic_console.c - Arabic-aware console utilities
+codepage.c - UTF-8 code page management
+vt_processing.c - Virtual terminal sequence handling 

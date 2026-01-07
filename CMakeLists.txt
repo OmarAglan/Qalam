@@ -63,6 +63,7 @@ endif()
 #-----------------------------------------------------------------------------
 include_directories(
     ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/ui
 )
 
 #-----------------------------------------------------------------------------
@@ -74,9 +75,10 @@ set(QALAM_SOURCES
     src/core/buffer.c
     # src/core/cursor.c
     
-    # UI subsystem sources (to be added)
+    # UI subsystem sources
+    src/ui/dwrite.c
+    src/ui/render.c
     # src/ui/window.c
-    # src/ui/render.c
     
     # Console subsystem sources (to be added)
     # src/console/arabic_console.c
@@ -90,6 +92,14 @@ set(QALAM_SOURCES
 #-----------------------------------------------------------------------------
 set(QALAM_CORE_SOURCES
     src/core/buffer.c
+)
+
+#-----------------------------------------------------------------------------
+# UI Library Sources (for sharing between main executable and tests)
+#-----------------------------------------------------------------------------
+set(QALAM_UI_SOURCES
+    src/ui/dwrite.c
+    src/ui/render.c
 )
 
 #-----------------------------------------------------------------------------
@@ -164,6 +174,35 @@ set_target_properties(test_buffer PROPERTIES
 
 # Register test with CTest
 add_test(NAME BufferTests COMMAND test_buffer)
+
+# Test executable for DirectWrite tests
+add_executable(test_dwrite
+    tests/test_dwrite.c
+    ${QALAM_UI_SOURCES}
+)
+
+target_include_directories(test_dwrite PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_SOURCE_DIR}/src/ui
+)
+
+if(WIN32)
+    target_link_libraries(test_dwrite PRIVATE
+        dwrite
+        d2d1
+        user32
+        gdi32
+        ole32
+    )
+endif()
+
+set_target_properties(test_dwrite PROPERTIES
+    OUTPUT_NAME "test_dwrite"
+    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin/tests"
+)
+
+# Register DirectWrite tests with CTest
+add_test(NAME DirectWriteTests COMMAND test_dwrite)
 
 message(STATUS "Qalam IDE Configuration:")
 message(STATUS "  Version: ${PROJECT_VERSION}")

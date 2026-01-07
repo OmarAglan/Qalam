@@ -6,9 +6,9 @@
 cmake_minimum_required(VERSION 3.16)
 
 project(Qalam
-    VERSION 0.0.1
+    VERSION 0.0.2
     DESCRIPTION "Arabic-first Integrated Development Environment"
-    LANGUAGES C
+    LANGUAGES C CXX
 )
 
 #-----------------------------------------------------------------------------
@@ -17,6 +17,13 @@ project(Qalam
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
 set(CMAKE_C_EXTENSIONS OFF)
+
+#-----------------------------------------------------------------------------
+# C++ Standard Configuration (for DirectWrite wrapper)
+#-----------------------------------------------------------------------------
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
 
 #-----------------------------------------------------------------------------
 # Windows Platform Requirements
@@ -69,22 +76,35 @@ include_directories(
 #-----------------------------------------------------------------------------
 # Source Files
 #-----------------------------------------------------------------------------
-set(QALAM_SOURCES
+set(QALAM_C_SOURCES
     src/main.c
     # Core subsystem sources
     src/core/buffer.c
     # src/core/cursor.c
-    
-    # UI subsystem sources
-    src/ui/dwrite.c
-    src/ui/render.c
-    # src/ui/window.c
     
     # Console subsystem sources (to be added)
     # src/console/arabic_console.c
     
     # Terminal subsystem sources (to be added)
     # src/terminal/conpty.c
+)
+
+#-----------------------------------------------------------------------------
+# C++ Source Files (DirectWrite/D2D COM wrapper)
+#-----------------------------------------------------------------------------
+set(QALAM_CPP_SOURCES
+    src/ui/dwrite_impl.cpp
+)
+
+# Mark C++ source files to be compiled with C++ compiler
+set_source_files_properties(${QALAM_CPP_SOURCES} PROPERTIES LANGUAGE CXX)
+
+#-----------------------------------------------------------------------------
+# Combined Sources
+#-----------------------------------------------------------------------------
+set(QALAM_SOURCES
+    ${QALAM_C_SOURCES}
+    ${QALAM_CPP_SOURCES}
 )
 
 #-----------------------------------------------------------------------------
@@ -96,10 +116,10 @@ set(QALAM_CORE_SOURCES
 
 #-----------------------------------------------------------------------------
 # UI Library Sources (for sharing between main executable and tests)
+# Now uses C++ implementation for DirectWrite
 #-----------------------------------------------------------------------------
 set(QALAM_UI_SOURCES
-    src/ui/dwrite.c
-    src/ui/render.c
+    ${QALAM_CPP_SOURCES}
 )
 
 #-----------------------------------------------------------------------------
@@ -207,5 +227,6 @@ add_test(NAME DirectWriteTests COMMAND test_dwrite)
 message(STATUS "Qalam IDE Configuration:")
 message(STATUS "  Version: ${PROJECT_VERSION}")
 message(STATUS "  C Standard: ${CMAKE_C_STANDARD}")
+message(STATUS "  C++ Standard: ${CMAKE_CXX_STANDARD}")
 message(STATUS "  Build Type: ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Tests: Enabled")

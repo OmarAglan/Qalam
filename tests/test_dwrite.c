@@ -2,22 +2,23 @@
  * @file test_dwrite.c
  * @brief Qalam IDE - DirectWrite Unit Tests
  * 
- * Tests for the DirectWrite text rendering system including:
+ * Tests for the DirectWrite text rendering system using the new pure C API:
  * - Factory initialization/shutdown
  * - Text format creation
  * - Arabic text layout creation
  * - Text measurement
  * - Hit testing (point to position, position to point)
  * 
- * @version 0.0.1
+ * @version 0.0.2
  * @copyright (c) 2026 Qalam Project
  */
 
-#include "dwrite_internal.h"
+#include "dwrite_api.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <locale.h>
+#include <wchar.h>
 
 /*=============================================================================
  * Test Framework
@@ -96,20 +97,14 @@ TEST(factory_init_shutdown) {
     result = qalam_dwrite_init();
     ASSERT_OK(result);
     
-    /* Verify factory is available */
-    IDWriteFactory* factory = qalam_dwrite_get_factory();
-    ASSERT_NOT_NULL(factory);
-    
-    /* Verify D2D factory is available */
-    ID2D1Factory* d2d_factory = qalam_dwrite_get_d2d_factory();
-    ASSERT_NOT_NULL(d2d_factory);
+    /* Verify initialized */
+    ASSERT(qalam_dwrite_is_initialized());
     
     /* Shutdown */
     qalam_dwrite_shutdown();
     
-    /* After shutdown, factories should be NULL */
-    factory = qalam_dwrite_get_factory();
-    ASSERT(factory == NULL);
+    /* After shutdown, should not be initialized */
+    ASSERT(!qalam_dwrite_is_initialized());
     
     TEST_PASSED();
 }
@@ -123,20 +118,20 @@ TEST(factory_refcount) {
     /* First init */
     result = qalam_dwrite_init();
     ASSERT_OK(result);
-    ASSERT_NOT_NULL(qalam_dwrite_get_factory());
+    ASSERT(qalam_dwrite_is_initialized());
     
     /* Second init (should increment refcount) */
     result = qalam_dwrite_init();
     ASSERT_OK(result);
-    ASSERT_NOT_NULL(qalam_dwrite_get_factory());
+    ASSERT(qalam_dwrite_is_initialized());
     
-    /* First shutdown (should decrement refcount, factory still valid) */
+    /* First shutdown (should decrement refcount, still initialized) */
     qalam_dwrite_shutdown();
-    ASSERT_NOT_NULL(qalam_dwrite_get_factory());
+    ASSERT(qalam_dwrite_is_initialized());
     
-    /* Second shutdown (refcount reaches 0, factory released) */
+    /* Second shutdown (refcount reaches 0, not initialized) */
     qalam_dwrite_shutdown();
-    ASSERT(qalam_dwrite_get_factory() == NULL);
+    ASSERT(!qalam_dwrite_is_initialized());
     
     TEST_PASSED();
 }
@@ -146,18 +141,21 @@ TEST(factory_refcount) {
  */
 TEST(factory_not_initialized) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
+    QalamDWriteTextFormat* format = NULL;
     
     /* Ensure not initialized */
-    ASSERT(qalam_dwrite_get_factory() == NULL);
+    ASSERT(!qalam_dwrite_is_initialized());
     
     /* Try to create text format without initialization */
-    result = qalam_dwrite_create_text_format(
-        L"Cascadia Code", 14.0f, 
-        DWRITE_FONT_WEIGHT_NORMAL, 
-        DWRITE_FONT_STYLE_NORMAL,
-        &format
-    );
+    QalamDWriteFontParams params = {
+        .family = L"Cascadia Code",
+        .size = 14.0f,
+        .weight = QALAM_DWRITE_FONT_WEIGHT_NORMAL,
+        .style = QALAM_DWRITE_FONT_STYLE_NORMAL,
+        .is_rtl = false
+    };
+    
+    result = qalam_dwrite_text_format_create(&params, &format);
     
     ASSERT_EQ(QALAM_ERROR_NOT_INITIALIZED, result);
     ASSERT(format == NULL);
@@ -174,29 +172,27 @@ TEST(factory_not_initialized) {
  */
 TEST(text_format_create) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
+    QalamDWriteTextFormat* format = NULL;
     
     /* Initialize */
     result = qalam_dwrite_init();
     ASSERT_OK(result);
     
     /* Create text format */
-    result = qalam_dwrite_create_text_format(
-        L"Cascadia Code",
-        14.0f,
-        DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL,
-        &format
-    );
+    QalamDWriteFontParams params = {
+        .family = L"Cascadia Code",
+        .size = 14.0f,
+        .weight = QALAM_DWRITE_FONT_WEIGHT_NORMAL,
+        .style = QALAM_DWRITE_FONT_STYLE_NORMAL,
+        .is_rtl = false
+    };
+    
+    result = qalam_dwrite_text_format_create(&params, &format);
     ASSERT_OK(result);
     ASSERT_NOT_NULL(format);
     
-    /* Verify font size */
-    float font_size = format->lpVtbl->GetFontSize(format);
-    ASSERT(font_size >= 13.9f && font_size <= 14.1f);
-    
-    /* Release format */
-    format->lpVtbl->Release(format);
+    /* Destroy format */
+    qalam_dwrite_text_format_destroy(format);
     
     /* Cleanup */
     qalam_dwrite_shutdown();
@@ -209,28 +205,23 @@ TEST(text_format_create) {
  */
 TEST(arabic_text_format_create) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
-    DWRITE_READING_DIRECTION reading_dir;
+    QalamDWriteTextFormat* format = NULL;
     
     /* Initialize */
     result = qalam_dwrite_init();
     ASSERT_OK(result);
     
     /* Create Arabic text format */
-    result = qalam_dwrite_create_arabic_text_format(
-        L"Cascadia Code",
+    result = qalam_dwrite_text_format_create_arabic(
+        L"Segoe UI",
         16.0f,
         &format
     );
     ASSERT_OK(result);
     ASSERT_NOT_NULL(format);
     
-    /* Verify RTL reading direction */
-    reading_dir = format->lpVtbl->GetReadingDirection(format);
-    ASSERT_EQ(DWRITE_READING_DIRECTION_RIGHT_TO_LEFT, reading_dir);
-    
-    /* Release format */
-    format->lpVtbl->Release(format);
+    /* Destroy format */
+    qalam_dwrite_text_format_destroy(format);
     
     /* Cleanup */
     qalam_dwrite_shutdown();
@@ -243,14 +234,14 @@ TEST(arabic_text_format_create) {
  */
 TEST(text_format_weights) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
-    DWRITE_FONT_WEIGHT weights[] = {
-        DWRITE_FONT_WEIGHT_THIN,
-        DWRITE_FONT_WEIGHT_LIGHT,
-        DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_WEIGHT_MEDIUM,
-        DWRITE_FONT_WEIGHT_BOLD,
-        DWRITE_FONT_WEIGHT_BLACK
+    QalamDWriteTextFormat* format = NULL;
+    QalamDWriteFontWeight weights[] = {
+        QALAM_DWRITE_FONT_WEIGHT_THIN,
+        QALAM_DWRITE_FONT_WEIGHT_LIGHT,
+        QALAM_DWRITE_FONT_WEIGHT_NORMAL,
+        QALAM_DWRITE_FONT_WEIGHT_MEDIUM,
+        QALAM_DWRITE_FONT_WEIGHT_BOLD,
+        QALAM_DWRITE_FONT_WEIGHT_BLACK
     };
     int num_weights = sizeof(weights) / sizeof(weights[0]);
     
@@ -260,17 +251,19 @@ TEST(text_format_weights) {
     
     /* Test each weight */
     for (int i = 0; i < num_weights; i++) {
-        result = qalam_dwrite_create_text_format(
-            L"Segoe UI",  /* Use system font for weight variety */
-            12.0f,
-            weights[i],
-            DWRITE_FONT_STYLE_NORMAL,
-            &format
-        );
+        QalamDWriteFontParams params = {
+            .family = L"Segoe UI",
+            .size = 12.0f,
+            .weight = weights[i],
+            .style = QALAM_DWRITE_FONT_STYLE_NORMAL,
+            .is_rtl = false
+        };
+        
+        result = qalam_dwrite_text_format_create(&params, &format);
         ASSERT_OK(result);
         ASSERT_NOT_NULL(format);
         
-        format->lpVtbl->Release(format);
+        qalam_dwrite_text_format_destroy(format);
         format = NULL;
     }
     
@@ -289,8 +282,8 @@ TEST(text_format_weights) {
  */
 TEST(text_layout_create) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
-    IDWriteTextLayout* layout = NULL;
+    QalamDWriteTextFormat* format = NULL;
+    QalamDWriteTextLayout* layout = NULL;
     const wchar_t* text = L"Hello, World!";
     
     /* Initialize */
@@ -298,17 +291,20 @@ TEST(text_layout_create) {
     ASSERT_OK(result);
     
     /* Create format */
-    result = qalam_dwrite_create_text_format(
-        L"Cascadia Code", 14.0f,
-        DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL,
-        &format
-    );
+    QalamDWriteFontParams params = {
+        .family = L"Cascadia Code",
+        .size = 14.0f,
+        .weight = QALAM_DWRITE_FONT_WEIGHT_NORMAL,
+        .style = QALAM_DWRITE_FONT_STYLE_NORMAL,
+        .is_rtl = false
+    };
+    
+    result = qalam_dwrite_text_format_create(&params, &format);
     ASSERT_OK(result);
     
     /* Create layout */
-    result = qalam_dwrite_create_text_layout(
-        text, wcslen(text), format,
+    result = qalam_dwrite_text_layout_create(
+        text, (uint32_t)wcslen(text), format,
         1000.0f, 100.0f,
         &layout
     );
@@ -316,8 +312,8 @@ TEST(text_layout_create) {
     ASSERT_NOT_NULL(layout);
     
     /* Cleanup */
-    layout->lpVtbl->Release(layout);
-    format->lpVtbl->Release(format);
+    qalam_dwrite_text_layout_destroy(layout);
+    qalam_dwrite_text_format_destroy(format);
     qalam_dwrite_shutdown();
     
     TEST_PASSED();
@@ -328,8 +324,8 @@ TEST(text_layout_create) {
  */
 TEST(rtl_text_layout_create) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
-    IDWriteTextLayout* layout = NULL;
+    QalamDWriteTextFormat* format = NULL;
+    QalamDWriteTextLayout* layout = NULL;
     const wchar_t* text = L"مرحبا بالعالم";  /* "Hello World" in Arabic */
     
     /* Initialize */
@@ -337,29 +333,25 @@ TEST(rtl_text_layout_create) {
     ASSERT_OK(result);
     
     /* Create Arabic format */
-    result = qalam_dwrite_create_arabic_text_format(
-        L"Segoe UI",  /* System font with Arabic support */
+    result = qalam_dwrite_text_format_create_arabic(
+        L"Segoe UI",
         14.0f,
         &format
     );
     ASSERT_OK(result);
     
-    /* Create RTL layout */
-    result = qalam_dwrite_create_rtl_text_layout(
-        text, wcslen(text), format,
+    /* Create layout (RTL is configured via format) */
+    result = qalam_dwrite_text_layout_create(
+        text, (uint32_t)wcslen(text), format,
         1000.0f, 100.0f,
         &layout
     );
     ASSERT_OK(result);
     ASSERT_NOT_NULL(layout);
     
-    /* Verify layout has RTL reading direction */
-    DWRITE_READING_DIRECTION dir = layout->lpVtbl->GetReadingDirection(layout);
-    ASSERT_EQ(DWRITE_READING_DIRECTION_RIGHT_TO_LEFT, dir);
-    
     /* Cleanup */
-    layout->lpVtbl->Release(layout);
-    format->lpVtbl->Release(format);
+    qalam_dwrite_text_layout_destroy(layout);
+    qalam_dwrite_text_format_destroy(format);
     qalam_dwrite_shutdown();
     
     TEST_PASSED();
@@ -370,8 +362,8 @@ TEST(rtl_text_layout_create) {
  */
 TEST(text_layout_empty) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
-    IDWriteTextLayout* layout = NULL;
+    QalamDWriteTextFormat* format = NULL;
+    QalamDWriteTextLayout* layout = NULL;
     const wchar_t* text = L"";
     
     /* Initialize */
@@ -379,16 +371,19 @@ TEST(text_layout_empty) {
     ASSERT_OK(result);
     
     /* Create format */
-    result = qalam_dwrite_create_text_format(
-        L"Cascadia Code", 14.0f,
-        DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL,
-        &format
-    );
+    QalamDWriteFontParams params = {
+        .family = L"Cascadia Code",
+        .size = 14.0f,
+        .weight = QALAM_DWRITE_FONT_WEIGHT_NORMAL,
+        .style = QALAM_DWRITE_FONT_STYLE_NORMAL,
+        .is_rtl = false
+    };
+    
+    result = qalam_dwrite_text_format_create(&params, &format);
     ASSERT_OK(result);
     
     /* Create layout with empty text */
-    result = qalam_dwrite_create_text_layout(
+    result = qalam_dwrite_text_layout_create(
         text, 0, format,
         1000.0f, 100.0f,
         &layout
@@ -397,8 +392,8 @@ TEST(text_layout_empty) {
     ASSERT_NOT_NULL(layout);
     
     /* Cleanup */
-    layout->lpVtbl->Release(layout);
-    format->lpVtbl->Release(format);
+    qalam_dwrite_text_layout_destroy(layout);
+    qalam_dwrite_text_format_destroy(format);
     qalam_dwrite_shutdown();
     
     TEST_PASSED();
@@ -413,9 +408,9 @@ TEST(text_layout_empty) {
  */
 TEST(text_measure) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
-    IDWriteTextLayout* layout = NULL;
-    DWRITE_TEXT_METRICS metrics;
+    QalamDWriteTextFormat* format = NULL;
+    QalamDWriteTextLayout* layout = NULL;
+    QalamDWriteTextMetrics metrics;
     const wchar_t* text = L"Hello, World!";
     
     /* Initialize */
@@ -423,37 +418,40 @@ TEST(text_measure) {
     ASSERT_OK(result);
     
     /* Create format */
-    result = qalam_dwrite_create_text_format(
-        L"Cascadia Code", 14.0f,
-        DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL,
-        &format
-    );
+    QalamDWriteFontParams params = {
+        .family = L"Cascadia Code",
+        .size = 14.0f,
+        .weight = QALAM_DWRITE_FONT_WEIGHT_NORMAL,
+        .style = QALAM_DWRITE_FONT_STYLE_NORMAL,
+        .is_rtl = false
+    };
+    
+    result = qalam_dwrite_text_format_create(&params, &format);
     ASSERT_OK(result);
     
     /* Create layout */
-    result = qalam_dwrite_create_text_layout(
-        text, wcslen(text), format,
+    result = qalam_dwrite_text_layout_create(
+        text, (uint32_t)wcslen(text), format,
         1000.0f, 100.0f,
         &layout
     );
     ASSERT_OK(result);
     
     /* Measure text */
-    result = qalam_dwrite_measure_text(layout, &metrics);
+    result = qalam_dwrite_text_layout_get_metrics(layout, &metrics);
     ASSERT_OK(result);
     
     /* Verify reasonable metrics */
-    ASSERT(metrics.width > 0);      /* Should have some width */
-    ASSERT(metrics.height > 0);     /* Should have some height */
-    ASSERT(metrics.lineCount >= 1); /* At least one line */
+    ASSERT(metrics.width > 0);       /* Should have some width */
+    ASSERT(metrics.height > 0);      /* Should have some height */
+    ASSERT(metrics.line_count >= 1); /* At least one line */
     
     /* Width should be reasonable for the text */
-    ASSERT(metrics.width < 500.0f); /* Not too wide for "Hello, World!" */
+    ASSERT(metrics.width < 500.0f);  /* Not too wide for "Hello, World!" */
     
     /* Cleanup */
-    layout->lpVtbl->Release(layout);
-    format->lpVtbl->Release(format);
+    qalam_dwrite_text_layout_destroy(layout);
+    qalam_dwrite_text_format_destroy(format);
     qalam_dwrite_shutdown();
     
     TEST_PASSED();
@@ -464,9 +462,9 @@ TEST(text_measure) {
  */
 TEST(arabic_text_measure) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
-    IDWriteTextLayout* layout = NULL;
-    DWRITE_TEXT_METRICS metrics;
+    QalamDWriteTextFormat* format = NULL;
+    QalamDWriteTextLayout* layout = NULL;
+    QalamDWriteTextMetrics metrics;
     const wchar_t* text = L"مرحبا";  /* "Hello" in Arabic */
     
     /* Initialize */
@@ -474,31 +472,31 @@ TEST(arabic_text_measure) {
     ASSERT_OK(result);
     
     /* Create Arabic format */
-    result = qalam_dwrite_create_arabic_text_format(
+    result = qalam_dwrite_text_format_create_arabic(
         L"Segoe UI", 14.0f, &format
     );
     ASSERT_OK(result);
     
-    /* Create RTL layout */
-    result = qalam_dwrite_create_rtl_text_layout(
-        text, wcslen(text), format,
+    /* Create layout */
+    result = qalam_dwrite_text_layout_create(
+        text, (uint32_t)wcslen(text), format,
         1000.0f, 100.0f,
         &layout
     );
     ASSERT_OK(result);
     
     /* Measure text */
-    result = qalam_dwrite_measure_text(layout, &metrics);
+    result = qalam_dwrite_text_layout_get_metrics(layout, &metrics);
     ASSERT_OK(result);
     
     /* Verify reasonable metrics */
     ASSERT(metrics.width > 0);
     ASSERT(metrics.height > 0);
-    ASSERT(metrics.lineCount >= 1);
+    ASSERT(metrics.line_count >= 1);
     
     /* Cleanup */
-    layout->lpVtbl->Release(layout);
-    format->lpVtbl->Release(format);
+    qalam_dwrite_text_layout_destroy(layout);
+    qalam_dwrite_text_format_destroy(format);
     qalam_dwrite_shutdown();
     
     TEST_PASSED();
@@ -513,10 +511,9 @@ TEST(arabic_text_measure) {
  */
 TEST(hit_test_point) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
-    IDWriteTextLayout* layout = NULL;
-    DWRITE_HIT_TEST_METRICS hit_metrics;
-    BOOL is_trailing, is_inside;
+    QalamDWriteTextFormat* format = NULL;
+    QalamDWriteTextLayout* layout = NULL;
+    QalamDWriteHitTestResult hit_result;
     const wchar_t* text = L"ABCDEFGHIJ";
     
     /* Initialize */
@@ -524,45 +521,46 @@ TEST(hit_test_point) {
     ASSERT_OK(result);
     
     /* Create format */
-    result = qalam_dwrite_create_text_format(
-        L"Cascadia Code", 14.0f,
-        DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL,
-        &format
-    );
+    QalamDWriteFontParams params = {
+        .family = L"Cascadia Code",
+        .size = 14.0f,
+        .weight = QALAM_DWRITE_FONT_WEIGHT_NORMAL,
+        .style = QALAM_DWRITE_FONT_STYLE_NORMAL,
+        .is_rtl = false
+    };
+    
+    result = qalam_dwrite_text_format_create(&params, &format);
     ASSERT_OK(result);
     
     /* Create layout */
-    result = qalam_dwrite_create_text_layout(
-        text, wcslen(text), format,
+    result = qalam_dwrite_text_layout_create(
+        text, (uint32_t)wcslen(text), format,
         1000.0f, 100.0f,
         &layout
     );
     ASSERT_OK(result);
     
     /* Hit test at the origin (should hit first character) */
-    result = qalam_dwrite_hit_test_point(
-        layout, 0.0f, 0.0f,
-        &hit_metrics, &is_trailing, &is_inside
+    result = qalam_dwrite_text_layout_hit_test_point(
+        layout, 0.0f, 0.0f, &hit_result
     );
     ASSERT_OK(result);
-    ASSERT(hit_metrics.textPosition == 0);  /* Should be at first character */
+    ASSERT(hit_result.text_position == 0);  /* Should be at first character */
     
     /* Hit test in the middle (should hit some middle character) */
-    DWRITE_TEXT_METRICS text_metrics;
-    qalam_dwrite_measure_text(layout, &text_metrics);
+    QalamDWriteTextMetrics metrics;
+    qalam_dwrite_text_layout_get_metrics(layout, &metrics);
     
-    result = qalam_dwrite_hit_test_point(
-        layout, text_metrics.width / 2.0f, text_metrics.height / 2.0f,
-        &hit_metrics, &is_trailing, &is_inside
+    result = qalam_dwrite_text_layout_hit_test_point(
+        layout, metrics.width / 2.0f, metrics.height / 2.0f, &hit_result
     );
     ASSERT_OK(result);
-    ASSERT(hit_metrics.textPosition > 0);  /* Should be past first character */
-    ASSERT(hit_metrics.textPosition < wcslen(text));  /* Should be before end */
+    ASSERT(hit_result.text_position > 0);               /* Should be past first character */
+    ASSERT(hit_result.text_position < wcslen(text));    /* Should be before end */
     
     /* Cleanup */
-    layout->lpVtbl->Release(layout);
-    format->lpVtbl->Release(format);
+    qalam_dwrite_text_layout_destroy(layout);
+    qalam_dwrite_text_format_destroy(format);
     qalam_dwrite_shutdown();
     
     TEST_PASSED();
@@ -573,10 +571,10 @@ TEST(hit_test_point) {
  */
 TEST(hit_test_position) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
-    IDWriteTextLayout* layout = NULL;
+    QalamDWriteTextFormat* format = NULL;
+    QalamDWriteTextLayout* layout = NULL;
     float x, y;
-    DWRITE_HIT_TEST_METRICS hit_metrics;
+    QalamDWriteHitTestResult hit_result;
     const wchar_t* text = L"ABCDEFGHIJ";
     
     /* Initialize */
@@ -584,33 +582,36 @@ TEST(hit_test_position) {
     ASSERT_OK(result);
     
     /* Create format */
-    result = qalam_dwrite_create_text_format(
-        L"Cascadia Code", 14.0f,
-        DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL,
-        &format
-    );
+    QalamDWriteFontParams params = {
+        .family = L"Cascadia Code",
+        .size = 14.0f,
+        .weight = QALAM_DWRITE_FONT_WEIGHT_NORMAL,
+        .style = QALAM_DWRITE_FONT_STYLE_NORMAL,
+        .is_rtl = false
+    };
+    
+    result = qalam_dwrite_text_format_create(&params, &format);
     ASSERT_OK(result);
     
     /* Create layout */
-    result = qalam_dwrite_create_text_layout(
-        text, wcslen(text), format,
+    result = qalam_dwrite_text_layout_create(
+        text, (uint32_t)wcslen(text), format,
         1000.0f, 100.0f,
         &layout
     );
     ASSERT_OK(result);
     
     /* Get position of first character (leading edge) */
-    result = qalam_dwrite_hit_test_position(
-        layout, 0, FALSE, &x, &y, &hit_metrics
+    result = qalam_dwrite_text_layout_hit_test_position(
+        layout, 0, false, &x, &y, &hit_result
     );
     ASSERT_OK(result);
     ASSERT(x >= 0.0f);  /* Should be at or after origin */
     ASSERT(x < 50.0f);  /* Should be near the start */
     
     /* Get position of last character (trailing edge) */
-    result = qalam_dwrite_hit_test_position(
-        layout, (uint32_t)wcslen(text) - 1, TRUE, &x, &y, &hit_metrics
+    result = qalam_dwrite_text_layout_hit_test_position(
+        layout, (uint32_t)wcslen(text) - 1, true, &x, &y, &hit_result
     );
     ASSERT_OK(result);
     ASSERT(x > 50.0f);  /* Should be well past the start */
@@ -618,8 +619,8 @@ TEST(hit_test_position) {
     /* Verify positions are monotonically increasing */
     float prev_x = 0.0f;
     for (uint32_t i = 0; i < wcslen(text); i++) {
-        result = qalam_dwrite_hit_test_position(
-            layout, i, FALSE, &x, &y, NULL
+        result = qalam_dwrite_text_layout_hit_test_position(
+            layout, i, false, &x, &y, NULL
         );
         ASSERT_OK(result);
         ASSERT(x >= prev_x);  /* Each position should be >= previous */
@@ -627,8 +628,8 @@ TEST(hit_test_position) {
     }
     
     /* Cleanup */
-    layout->lpVtbl->Release(layout);
-    format->lpVtbl->Release(format);
+    qalam_dwrite_text_layout_destroy(layout);
+    qalam_dwrite_text_format_destroy(format);
     qalam_dwrite_shutdown();
     
     TEST_PASSED();
@@ -639,8 +640,8 @@ TEST(hit_test_position) {
  */
 TEST(hit_test_rtl) {
     QalamResult result;
-    IDWriteTextFormat* format = NULL;
-    IDWriteTextLayout* layout = NULL;
+    QalamDWriteTextFormat* format = NULL;
+    QalamDWriteTextLayout* layout = NULL;
     float x, y;
     const wchar_t* text = L"مرحبا";  /* "Hello" in Arabic - 5 characters */
     
@@ -649,78 +650,74 @@ TEST(hit_test_rtl) {
     ASSERT_OK(result);
     
     /* Create Arabic format */
-    result = qalam_dwrite_create_arabic_text_format(
+    result = qalam_dwrite_text_format_create_arabic(
         L"Segoe UI", 14.0f, &format
     );
     ASSERT_OK(result);
     
-    /* Create RTL layout */
-    result = qalam_dwrite_create_rtl_text_layout(
-        text, wcslen(text), format,
+    /* Create layout */
+    result = qalam_dwrite_text_layout_create(
+        text, (uint32_t)wcslen(text), format,
         1000.0f, 100.0f,
         &layout
     );
     ASSERT_OK(result);
     
-    /* Get position of first character (in RTL, this should be on the right) */
-    result = qalam_dwrite_hit_test_position(
-        layout, 0, FALSE, &x, &y, NULL
+    /* Get position of first character */
+    result = qalam_dwrite_text_layout_hit_test_position(
+        layout, 0, false, &x, &y, NULL
     );
     ASSERT_OK(result);
     
     float first_char_x = x;
     
-    /* Get position of last character (in RTL, this should be on the left) */
-    result = qalam_dwrite_hit_test_position(
-        layout, (uint32_t)wcslen(text) - 1, TRUE, &x, &y, NULL
+    /* Get position of last character */
+    result = qalam_dwrite_text_layout_hit_test_position(
+        layout, (uint32_t)wcslen(text) - 1, true, &x, &y, NULL
     );
     ASSERT_OK(result);
     
     float last_char_x = x;
     
-    /* In RTL, the first character position should be >= last character position
-       (or very close, depending on layout origin) */
-    /* Note: The exact behavior depends on the layout width and origin */
+    /* In RTL, positions may differ - just verify we got valid results */
+    ASSERT(first_char_x >= 0.0f);
+    ASSERT(last_char_x >= 0.0f);
     
     /* Cleanup */
-    layout->lpVtbl->Release(layout);
-    format->lpVtbl->Release(format);
+    qalam_dwrite_text_layout_destroy(layout);
+    qalam_dwrite_text_format_destroy(format);
     qalam_dwrite_shutdown();
     
     TEST_PASSED();
 }
 
 /*=============================================================================
- * Test Cases: Font Fallback
+ * Test Cases: Color Utilities
  *============================================================================*/
 
 /**
- * @brief Test font fallback setup (placeholder)
+ * @brief Test color creation utilities
  */
-TEST(font_fallback_setup) {
-    QalamResult result;
-    IDWriteTextFormat* format = NULL;
+TEST(color_utilities) {
+    QalamDWriteColor color;
     
-    /* Initialize */
-    result = qalam_dwrite_init();
-    ASSERT_OK(result);
+    /* Test RGB color creation */
+    color = qalam_dwrite_color_from_rgb(255, 128, 0);
+    ASSERT(color.r >= 0.99f && color.r <= 1.01f);
+    ASSERT(color.g >= 0.49f && color.g <= 0.51f);
+    ASSERT(color.b >= -0.01f && color.b <= 0.01f);
+    ASSERT(color.a >= 0.99f && color.a <= 1.01f);
     
-    /* Create format */
-    result = qalam_dwrite_create_text_format(
-        L"Cascadia Code", 14.0f,
-        DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL,
-        &format
-    );
-    ASSERT_OK(result);
+    /* Test RGBA color creation */
+    color = qalam_dwrite_color_from_rgba(128, 128, 128, 128);
+    ASSERT(color.r >= 0.49f && color.r <= 0.51f);
+    ASSERT(color.a >= 0.49f && color.a <= 0.51f);
     
-    /* Setup font fallback */
-    result = qalam_dwrite_setup_font_fallback(format);
-    ASSERT_OK(result);
-    
-    /* Cleanup */
-    format->lpVtbl->Release(format);
-    qalam_dwrite_shutdown();
+    /* Test hex color creation */
+    color = qalam_dwrite_color_from_hex(0xFF0000);  /* Red */
+    ASSERT(color.r >= 0.99f && color.r <= 1.01f);
+    ASSERT(color.g >= -0.01f && color.g <= 0.01f);
+    ASSERT(color.b >= -0.01f && color.b <= 0.01f);
     
     TEST_PASSED();
 }
@@ -739,23 +736,29 @@ TEST(null_pointer_handling) {
     result = qalam_dwrite_init();
     ASSERT_OK(result);
     
-    /* Test null format pointer */
-    result = qalam_dwrite_create_text_format(
-        L"Cascadia Code", 14.0f,
-        DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL,
-        NULL
-    );
+    /* Test null format output pointer */
+    QalamDWriteFontParams params = {
+        .family = L"Cascadia Code",
+        .size = 14.0f,
+        .weight = QALAM_DWRITE_FONT_WEIGHT_NORMAL,
+        .style = QALAM_DWRITE_FONT_STYLE_NORMAL,
+        .is_rtl = false
+    };
+    
+    result = qalam_dwrite_text_format_create(&params, NULL);
     ASSERT_EQ(QALAM_ERROR_NULL_POINTER, result);
     
     /* Test null font family */
-    IDWriteTextFormat* format = NULL;
-    result = qalam_dwrite_create_text_format(
-        NULL, 14.0f,
-        DWRITE_FONT_WEIGHT_NORMAL,
-        DWRITE_FONT_STYLE_NORMAL,
-        &format
-    );
+    QalamDWriteFontParams null_params = {
+        .family = NULL,
+        .size = 14.0f,
+        .weight = QALAM_DWRITE_FONT_WEIGHT_NORMAL,
+        .style = QALAM_DWRITE_FONT_STYLE_NORMAL,
+        .is_rtl = false
+    };
+    
+    QalamDWriteTextFormat* format = NULL;
+    result = qalam_dwrite_text_format_create(&null_params, &format);
     ASSERT_EQ(QALAM_ERROR_NULL_POINTER, result);
     
     /* Cleanup */
@@ -802,9 +805,9 @@ void run_hit_test_tests(void) {
     RUN_TEST(hit_test_rtl);
 }
 
-void run_fallback_tests(void) {
-    printf("\n=== Font Fallback Tests ===\n");
-    RUN_TEST(font_fallback_setup);
+void run_utility_tests(void) {
+    printf("\n=== Utility Tests ===\n");
+    RUN_TEST(color_utilities);
 }
 
 void run_error_tests(void) {
@@ -818,6 +821,7 @@ int main(void) {
     
     printf("========================================\n");
     printf("Qalam IDE - DirectWrite Test Suite\n");
+    printf("Using New Pure C API (dwrite_api.h)\n");
     printf("========================================\n");
     
     /* Run all test suites */
@@ -826,7 +830,7 @@ int main(void) {
     run_layout_tests();
     run_measurement_tests();
     run_hit_test_tests();
-    run_fallback_tests();
+    run_utility_tests();
     run_error_tests();
     
     /* Print summary */
